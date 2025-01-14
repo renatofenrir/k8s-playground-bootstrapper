@@ -1,0 +1,51 @@
+- hosts: bifrost-k8s-master
+  gather_facts: false
+  tasks:
+    - name: Copying k8s master node public key to local directory
+      become: yes
+      fetch:
+        src: /home/ubuntu/.ssh/id_rsa.pub
+        dest: ./
+
+- hosts: bifrost-k8s-master
+  tasks:
+  - name: Makes k8s-master add his own public key to its authorized_keys file to avoid rke from breaking during provisioning
+    authorized_key:
+      user: ubuntu
+      state: present
+      key: "{{ lookup('file', '{{ playbook_dir }}/192.168.0.120/home/ubuntu/.ssh/id_rsa.pub') }}"
+
+- hosts: bifrost-k8s-workers
+  tasks:
+  - name: Distribute k8s-master node public key across all worker nodes
+    authorized_key:
+      user: ubuntu
+      state: present
+      key: "{{ lookup('file', '{{ playbook_dir }}/192.168.0.120/home/ubuntu/.ssh/id_rsa.pub') }}"
+
+- hosts: bifrost-k8s-master
+  tasks:
+    - name: Uploads cluster.yml file to k8s master node
+      become: yes
+      copy:
+        src: cluster.yml
+        dest: /home/ubuntu/
+
+- hosts: bifrost-k8s-master
+  tasks:
+  - name: Initiates k8s provisioning with rke
+    command: rke up
+    become: true
+    become_user: ubuntu
+
+  - name: Create .kube directory
+    file:
+      path: "{{ ansible_env.HOME }}/.kube"
+      state: directory
+      owner: ubuntu
+      group: ubuntu
+
+  - name: Copy kubeconfig file
+    command: cp "{{ ansible_env.HOME }}/kube_config_cluster.yml" "{{ ansible_env.HOME }}/.kube/config"
+    become: true
+    become_user: ubuntu

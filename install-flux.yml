@@ -1,0 +1,28 @@
+---
+- name: Install FLUX
+  hosts: bifrost-k8s-master
+  become: true
+
+  tasks:
+    - name: Download Flux installation script
+      get_url:
+        url: "https://fluxcd.io/install.sh"
+        dest: "/tmp/install.sh"
+
+    - name: Run Flux installation script
+      shell: "bash /tmp/install.sh"
+      become: true
+      become_user: ubuntu
+
+    - name: Remove installation script
+      file:
+        path: "/tmp/install.sh"
+        state: absent
+
+    - name: Check Flux version
+      command: flux --version
+      register: flux_version
+
+    - name: Display Flux version
+      debug:
+        var: flux_version.stdout

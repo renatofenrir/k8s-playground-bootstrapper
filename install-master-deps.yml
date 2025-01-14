@@ -1,0 +1,56 @@
+---
+- name: Install RKE, Helm, and kubectl
+  hosts: bifrost-k8s-master
+  become: true
+
+  tasks:
+    - name: Download RKE binary
+      get_url:
+        url: https://github.com/rancher/rke/releases/download/v1.5.7/rke_linux-amd64
+        dest: /usr/local/bin/rke
+        mode: 0755
+
+    - name: Check RKE version
+      command: rke --version
+      register: rke_version
+      changed_when: false
+
+    - name: Display RKE version
+      debug:
+        var: rke_version.stdout_lines
+
+    - name: Install Helm
+      shell: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+    - name: Check Helm version
+      command: helm version
+      register: helm_version
+      changed_when: false
+
+    - name: Display Helm version
+      debug:
+        var: helm_version.stdout_lines
+
+    - name: Download kubectl binary
+      shell: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+    - name: Check kubectl version
+      command: kubectl version --client=true
+      register: kubectl_version
+      changed_when: false
+
+    - name: Display kubectl version
+      debug:
+        var: kubectl_version.stdout_lines
+
+    - name: Generate RSA SSH key pair
+      command: ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -q -N "" -C ubuntu@k8s-master.prod.bifrost.io
+      become: true
+      become_user: ubuntu
+
+    - name: Configuring useful aliases
+      command: echo "export KUBECONFIG=\$HOME/.kube/config" >> $HOME/.bashrc && echo "alias k=kubectl" >> $HOME/.bashrc
+      become: true
+      become_user: ubuntu

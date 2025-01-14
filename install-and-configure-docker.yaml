@@ -1,0 +1,8 @@
+- name: Run local Docker installation script on remote machine
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Execute Docker installation script
+      become: true
+      command: sh -c "./install-docker.sh"

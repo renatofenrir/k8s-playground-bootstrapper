@@ -1,0 +1,82 @@
+stages:
+  - init
+  - plan
+  - apply
+  - run-ansible
+  - destroy
+
+cache:
+  paths:
+    - .terraform/
+
+.proxmox_configs:
+  script:
+    - export TF_VAR_PM_USER=${TF_VAR_PM_USER} && TF_VAR_PM_PASSWORD=${TF_VAR_PM_PASSWORD}
+  tags:
+    - terraform
+
+init:
+  tags:
+    - terraform
+  extends:
+    - .proxmox_configs
+  stage: init
+  script:
+    - docker run --rm --env "secret_key=$MINIO_SECRET_KEY" --env "access_key=$MINIO_ACCESS_TOKEN" -u="1002:1002" -v $PWD:/terraform -w="/terraform" renatofenrir/terraform:v4 terraform init -backend-config=access_key=$MINIO_ACCESS_TOKEN -backend-config=secret_key=$MINIO_SECRET_KEY
+
+plan:
+  tags:
+    - terraform
+  extends:
+    - .proxmox_configs
+  stage: plan
+  script:
+     - docker run --rm --env "TF_VAR_PM_USER=$TF_VAR_PM_USER" --env "TF_VAR_PM_PASSWORD=$TF_VAR_PM_PASSWORD" -u="0:0" -v $PWD:/terraform -w="/terraform" renatofenrir/terraform:v4 terraform plan -var=pm_user=$TF_VAR_PM_USER -var=pm_password=$TF_VAR_PM_PASSWORD
+
+apply:
+  tags:
+    - terraform
+  extends:
+    - .proxmox_configs
+  stage: apply
+  script:
+    - docker run --rm --env "TF_VAR_PM_USER=$TF_VAR_PM_USER" --env "TF_VAR_PM_PASSWORD=$TF_VAR_PM_PASSWORD" -u="0:0" -v $PWD:/terraform -w="/terraform" renatofenrir/terraform:v4 terraform apply -auto-approve --parallelism=1 -var=pm_user=$TF_VAR_PM_USER -var=pm_password=$TF_VAR_PM_PASSWORD
+
+run-ansible:
+  tags:
+    - terraform
+  variables:
+    ANSIBLE_HOST_KEY_CHECKING: "False"
+    ANSIBLE_CONFIG: "$PWD/ansible.cfg"
+    GITLAB_TOKEN: $GITLAB_TOKEN
+    FLUX_CLUSTER_NAME: cks-playground-cluster
+    FLUX_CUSTOM_CLUSTER_SUFFIX: $CI_COMMIT_SHA
+    FLUX_CLUSTER_DOMAIN: cluster.cks-playground-cluster
+  stage: run-ansible
+  script:
+    - echo "[DEBUG] On the Flux management Gitlab SaaS repo, the reference folder will be called my-cluster_${FLUX_CLUSTER_NAME}_${FLUX_CUSTOM_CLUSTER_SUFFIX}"
+    - echo [INFO] Running stack installation playbook but first Im gonna wait for cloudInit to finish his stuff..
+    - sleep 240
+    - echo "[INFO] Installing and configuring Docker across all nodes.."
+    - ansible-playbook -i hosts --user=ubuntu -e 'ansible_python_interpreter=/usr/bin/python3' install-and-configure-docker.yaml
+    - echo "[INFO] Installing K8s master node dependencies.."
+    - ansible-playbook -i hosts --user=ubuntu -e 'ansible_python_interpreter=/usr/bin/python3' install-master-deps.yml
+    - echo "[INFO] Installing flux on k8s master node.."
+    - ansible-playbook -i hosts --user=ubuntu -e 'ansible_python_interpreter=/usr/bin/python3' install-flux.yml
+    - echo "[INFO] Initiating Kubernetes Cluster provisioning.."
+    - ansible-playbook -i hosts --user=ubuntu -e 'ansible_python_interpreter=/usr/bin/python3' setup-k8s-playbook.yml
+    - echo "[INFO] Running flux bootstrap, so this cluster can be automatically added to the flux management repo.."
+    - ansible-playbook -i hosts --user=ubuntu -e 'ansible_python_interpreter=/usr/bin/python3' flux-bootstrap.yml -e "FLUX_CLUSTER_NAME=$FLUX_CLUSTER_NAME FLUX_CLUSTER_DOMAIN=$FLUX_CLUSTER_DOMAIN FLUX_CUSTOM_CLUSTER_SUFFIX=$FLUX_CUSTOM_CLUSTER_SUFFIX GITLAB_TOKEN=$GITLAB_TOKEN"
+    - echo "[INFO] Checking if all nodes are ready:"
+    - ansible -a "kubectl get nodes -owide --kubeconfig=kube_config_cluster.yml" -i hosts bifrost-k8s-master -u ubuntu -e 'ansible_python_interpreter=/usr/bin/python3'
+    - echo "[INFO] Checking flux installation:"
+    - ansible -a "flux check --kubeconfig=kube_config_cluster.yml" -i hosts bifrost-k8s-master -u ubuntu -e 'ansible_python_interpreter=/usr/bin/python3'
+    - echo [INFO] Provisining completed. Please check flux sync status later on. Enjoy!
+
+destroy:
+  tags:
+    - terraform
+  stage: destroy
+  script:
+    - docker run --rm --env "TF_VAR_PM_USER=$TF_VAR_PM_USER" --env "TF_VAR_PM_PASSWORD=$TF_VAR_PM_PASSWORD" -u="0:0" -v $PWD:/terraform -w="/terraform" renatofenrir/terraform:v4 terraform destroy -auto-approve -var=pm_user=$TF_VAR_PM_USER -var=pm_password=$TF_VAR_PM_PASSWORD
+  when: manual

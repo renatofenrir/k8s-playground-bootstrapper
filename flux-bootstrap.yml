@@ -1,0 +1,19 @@
+- name: Run Flux Bootstrap
+  hosts: bifrost-k8s-master
+  vars:
+    FLUX_CLUSTER_NAME: "{{ lookup('env', 'FLUX_CLUSTER_NAME') | default('') }}"
+    FLUX_CUSTOM_CLUSTER_SUFFIX: "{{ lookup('env', 'FLUX_CUSTOM_CLUSTER_SUFFIX') | default('') }}"
+    GITLAB_TOKEN: "{{ lookup('env', 'GITLAB_TOKEN') | default('') }}"
+    FLUX_CLUSTER_DOMAIN: "{{ lookup('env', 'FLUX_CLUSTER_DOMAIN') | default('') }}"
+  gather_facts: false
+
+  tasks:
+    - name: Transfer bootstrap script
+      copy:
+        src: bootstrap.sh
+        dest: /tmp/bootstrap.sh
+        mode: 0755
+
+    - name: Execute bootstrap script
+      become: false
+      command: sh -c "FLUX_CLUSTER_NAME={{ FLUX_CLUSTER_NAME }} FLUX_CUSTOM_CLUSTER_SUFFIX={{ FLUX_CUSTOM_CLUSTER_SUFFIX }} GITLAB_TOKEN={{ GITLAB_TOKEN }} FLUX_CLUSTER_DOMAIN={{ FLUX_CLUSTER_DOMAIN }} /tmp/bootstrap.sh"

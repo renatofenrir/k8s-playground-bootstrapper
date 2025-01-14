@@ -1,0 +1,7 @@
+[bifrost-k8s-master]
+
+192.168.0.120   ansible_user=ubuntu
+
+[bifrost-k8s-workers]
+
+192.168.0.121   ansible_user=ubuntu
